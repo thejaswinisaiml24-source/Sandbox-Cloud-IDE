@@ -1,0 +1,78 @@
+services:
+  database:
+    image: postgres:16-alpine
+    container_name: sandbox-database
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sandbox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sandbox}
+      POSTGRES_DB: ${POSTGRES_DB:-sandbox}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - sandbox_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sandbox}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sandbox_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: sandbox-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-sandbox}:${POSTGRES_PASSWORD:-sandbox}@database:5432/${POSTGRES_DB:-sandbox}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - sandbox_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: sandbox-frontend
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - sandbox_network
+
+  nginx:
+    build:
+      context: ./nginx
+    container_name: sandbox-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - sandbox_network
+
+networks:
+  sandbox_network:
+    driver: bridge
+
+volumes:
+  sandbox_db_data:
